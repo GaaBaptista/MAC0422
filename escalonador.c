@@ -5,7 +5,8 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <assert.h>
-#include <semaphore.h>
+#include <time.h>
+#include <sched.h>
 
 #define MAX 255
 #define MAX_STRING_LENGTH 255
@@ -16,7 +17,7 @@
 struct process {
 
 	int id;
-	float time_arrive, execution_time, deadline;
+	float arrival_time, execution_time, deadline;
 	char* name;
 };
 
@@ -25,40 +26,46 @@ typedef struct process process;
 /* 	Variaveis globais. Não sei se todas necessariamente precisam ser globais.
 	Quando terminar a gente olha	*/ 
 
-int total_processes = 0, cont_teste = 0;
+int total_processes = 0;
 process processes [MAX];
 pthread_t threads[MAX];
 long thread_ids[MAX];
+clock_t initial_time;
 
-sem_t mutex;
+pthread_mutex_t mutex;
+
+
+int compare_processes_qsort(const void * a, const void * b){
+	return ((*(process *)a).arrival_time - (*(process *)b).arrival_time);
+}
 
 /* 	Printa os processos, só pra ver se foi lido corretamente do arquivo	*/
 
 void list_processes(){
 	int i;
 	for (i = 0; i < total_processes; i++)
-		printf("|ID: %d | |t0: %f | |name: %s | |dt: %f | |dl:%f |\n", processes[i].id, processes[i].time_arrive, processes[i].name, processes[i].execution_time, processes[i].deadline);
+		printf("|ID: %d | |t0: %f | |name: %s | |dt: %f | |dl:%f |\n", processes[i].id, processes[i].arrival_time, processes[i].name, processes[i].execution_time, processes[i].deadline);
 }
 
 /* 	Função que executa o que realmente deve ser feito no EP (O que terá que ser feito nas threads).
 	Depois muda o nome e pah */
-void *teste(void * thread_id){
-	int bla;
-	sem_wait(&mutex);
-	/* Código real */
-	sem_post(&mutex);
-	pthread_exit(NULL);
-}
 
-/* Cria as threads e coloca elas no vetor threads[MAX], em ordem de leitura do arquivo */
-
-void create_threads(){
-	long i;
-	for (i = 0; i < total_processes; i++){
-		printf("Criando thread %ld.\n", i);
-		thread_ids[i] = i;
-		assert (0 == pthread_create(&threads[i], NULL, teste, (void *) thread_ids[i]));
-	}
+void *execute_process(void * thread_id){
+	long id = (long) thread_id;
+	clock_t start;
+	pthread_mutex_lock(&mutex);
+	printf("Thread %ld comecou\n", id);
+	double cronometer = -1;
+	start = clock();
+	while ((cronometer < processes[id].execution_time) && (cronometer < processes[id].deadline))
+		cronometer = difftime(clock(), start) / CLOCKS_PER_SEC;
+	printf("Current CPU: %d\n", sched_getcpu());
+	if (cronometer < processes[id].deadline)
+		printf("Processo %ld rodou seu tempo total de %lf segundos.\n", id, cronometer);
+	else
+		printf("Processo %ld parou no deadline de %lf segundos.\n", id, processes[id].deadline);
+	pthread_mutex_unlock(&mutex);
+	return NULL;
 }
 
 /*	Recebe o arquivo com os valores de t0, name, dt e deadline, e cria um vetor
@@ -71,7 +78,7 @@ void read_file(char ** argv){
 	fp = fopen(argv[1], "r");
 	while(!feof(fp)){
 		if (fscanf(fp, "%f %s %f %f\n", 
-		&processes[total_processes].time_arrive, 
+		&processes[total_processes].arrival_time, 
 		name, 
 		&processes[total_processes].execution_time, 
 		&processes[total_processes].deadline) != 4){
@@ -87,15 +94,30 @@ void read_file(char ** argv){
 	fclose(fp);
 }
 
+void * FCFS (){
+	int i = 0;
+	qsort(processes, total_processes, sizeof(process), compare_processes_qsort);
+	while(i < total_processes){
+		if (((difftime(clock(), initial_time) / CLOCKS_PER_SEC) - processes[i].arrival_time) > (1 / CLOCKS_PER_SEC)){
+			thread_ids[i] = processes[i].id;
+			assert (0 == pthread_create(&threads[i], NULL, execute_process, (void *) thread_ids[i]));
+			i++;
+		}
+	}
+
+	return NULL;
+}
+
 int main(int argc, char** argv){
 	int i;
-	sem_init(&mutex, 0, 1);
+	initial_time = clock();
+	pthread_mutex_init(&mutex, NULL);
 	read_file(argv);
-	list_processes();
-	create_threads();
+	FCFS();
 	for (i = 0; i < total_processes; i++)
 		assert(0 == pthread_join(threads[i], NULL));
-	printf("Valor final: %d\n", cont_teste);
+	pthread_exit(NULL);
+	pthread_mutex_destroy(&mutex);
 	return 0;
 
 }
