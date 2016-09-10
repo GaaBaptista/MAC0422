@@ -61,13 +61,10 @@ void list_processes(){
 }
 
 void * global_clock(){
-	clock_t tick, start;
-	double cronometer_a, cronometer_b;
-	start = clock();
+	clock_t tick;
 	while (1){
-		cronometer_a = (difftime(clock(), start) / CLOCKS_PER_SEC);
-		cronometer_b = (difftime(clock(), start) / CLOCKS_PER_SEC);
-		global_time = global_time + (cronometer_b - cronometer_a);
+		tick = clock();
+		global_time += (double)(clock() - tick) / ((double)(CLOCKS_PER_SEC));
 	}
 	return NULL;
 }
@@ -164,38 +161,39 @@ void * sort_queue (void * n){
 
 void * run_thread_SRTN(void * thread_id){
 	long id = (long) thread_id;
-	clock_t start, tick;
+	clock_t tick;
 
 	sem_wait(&mutex);
 
-	double cronometer_a = 1 / (- DBL_MIN), cronometer_b;	//	Cronometros para cronometrar o tempo total que o programa esta rodando.
-	start = tick = clock();								//	Começa de - DBL_MIN devido a chegada do processo poder ser 0
+	double cronometer_a = DBL_MIN, tick_time;	//	Cronometros para cronometrar o tempo total que o programa esta rodando.
 	printf("%s comecou a rodar...\n", processes[id].name);
-	while ((cronometer_a < processes[id].execution_time) && (global_time < processes[id].deadline)){	//	Tempo do processo / deadline
-			cronometer_b = difftime(tick, start) / CLOCKS_PER_SEC;
+	while ((cronometer_a < processes[id].execution_time)){	//	Tempo do processo / deadline
 			tick = clock();
-			cronometer_a = difftime(tick, start) / CLOCKS_PER_SEC;
-			global_time = global_time + (cronometer_a - cronometer_b);	//	Computa quanto tempo passou em um "tick" do clock
-			processes_queue[id].remaining_time = processes_queue[id].remaining_time - (cronometer_a - cronometer_b);
+			tick_time = (double)(clock() - tick) / ((double)(CLOCKS_PER_SEC)) ;
+			cronometer_a += tick_time;
+			processes_queue[id].remaining_time -= tick_time;
 	}
 	/*printf("Current CPU: %d\n", sched_getcpu());*/	// Deixa isso aqui. Tem que ter no relatorio, e não posso esquecer desse comando
+	printf("GLOBAL TIME: %lf\n", global_time);
 	if ((global_time) < processes[id].deadline)
 		printf("%s rodou um tempo total de %lf segundos.\n", processes[id].name, cronometer_a);
 	else
-		printf("%s parou no deadline de %lf segundos.\n", processes[id].name, processes[id].deadline);
+		printf("%s parou no deadline de %lf segundos. Rodou %lf segundos.\n", processes[id].name, processes[id].deadline, cronometer_a);
 	sem_post(&mutex);
 	return NULL;
 }
 
 void * SRTN (){
 	int i = 0;
+	clock_t tick;
 	double start_time;
 	pthread_t thread_queue;
 	qsort(processes, total_processes, sizeof(process), compare_processes_qsort);	//	qsort de acordo com a ordem de chegada. Talvez pros
 	assert (0 == pthread_create(&thread_queue, NULL, sort_queue, (void *) (long) queue_size));
 	printf("Thread criada.\n");
 	while(i < total_processes){														//	outros tenha que fazer outra função de comparação
-		start_time = (difftime(clock(), initial_time) / CLOCKS_PER_SEC);
+		tick = clock();
+		start_time += (double)(clock() - tick) / ((double)(CLOCKS_PER_SEC)) ;
 		if ((start_time - processes[i].arrival_time) > (1 / CLOCKS_PER_SEC)){		//	Espera até que um processo esteja disponível. Faz isso	
 			processes_queue[i] = processes[i];
 			assert (0 == pthread_create(&threads[i], NULL, run_thread_SRTN, (void *) (long) i));
@@ -209,6 +207,8 @@ void * SRTN (){
 int main(int argc, char** argv){
 	int i;
 	initial_time = clock();
+	pthread_t global_clock_thread;
+	assert (0 == pthread_create(&global_clock_thread, NULL, global_clock, NULL));
 	sem_init(&mutex, 0, 1);
 	read_file(argv);
 	SRTN();
