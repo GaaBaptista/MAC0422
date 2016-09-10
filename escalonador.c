@@ -10,6 +10,7 @@
 #include <time.h>
 #include <sched.h>
 #include <float.h>
+#include <semaphore.h>
 
 #define MAX 255
 #define MAX_STRING_LENGTH 255
@@ -31,13 +32,19 @@ typedef struct process process;
 	Quando terminar a gente olha	*/ 
 
 int total_processes = 0;
+long queue_size = 0;
+int queue_flags [MAX];
+
 process processes [MAX];
-pthread_t threads[MAX];
-clock_t initial_time;
-double global_time = 0;
 process processes_queue[MAX];
 
-pthread_mutex_t mutex;
+clock_t initial_time;
+
+double global_time = 0;
+
+pthread_t threads[MAX];
+sem_t mutex, sem_queue;
+
 
 int sched_getcpu(); //	Frescura do compilador
 
@@ -51,6 +58,18 @@ void list_processes(){
 	int i;
 	for (i = 0; i < total_processes; i++)
 		printf("|ID: %ld | |t0: %lf | |name: %s | |dt: %lf | |dl:%lf |\n", processes[i].id, processes[i].arrival_time, processes[i].name, processes[i].execution_time, processes[i].deadline);
+}
+
+void * global_clock(){
+	clock_t tick, start;
+	double cronometer_a, cronometer_b;
+	start = clock();
+	while (1){
+		cronometer_a = (difftime(clock(), start) / CLOCKS_PER_SEC);
+		cronometer_b = (difftime(clock(), start) / CLOCKS_PER_SEC);
+		global_time = global_time + (cronometer_b - cronometer_a);
+	}
+	return NULL;
 }
 
 /*	Recebe o arquivo com os valores de t0, name, dt e deadline, e cria um vetor
@@ -92,7 +111,7 @@ void *run_thread_FCFS(void * thread_id){
 	long id = (long) thread_id;
 	clock_t start, tick;
 
-	pthread_mutex_lock(&mutex);
+	sem_wait(&mutex);
 	double cronometer_a = 1 / (- DBL_MIN), cronometer_b;	//	Cronometros para cronometrar o tempo total que o programa esta rodando.
 	start = tick = clock();								//	Começa de - DBL_MIN devido a chegada do processo poder ser 0
 	while ((cronometer_a < processes[id].execution_time) && (global_time < processes[id].deadline)){	//	Tempo do processo / deadline
@@ -107,7 +126,7 @@ void *run_thread_FCFS(void * thread_id){
 		printf("%s rodou um tempo total de %lf segundos.\n", processes[id].name, cronometer_a);
 	else
 		printf("%s parou no deadline de %lf segundos.\n", processes[id].name, processes[id].deadline);
-	pthread_mutex_unlock(&mutex);
+	sem_post(&mutex);
 	return NULL;
 }
 
@@ -125,12 +144,12 @@ void * FCFS (){
 	return NULL;
 }
 
-void insert_queue(process p, int n){
+void * sort_queue (void * n){
+	long i = (long) n - 1;
+	long j = (long) n;
 	process temp;
-	processes_queue[n] = p;
-	int i = n - 1;
-	int j = n;
-	pthread_mutex_lock(&mutex);
+	sem_wait(&mutex);
+	printf("ESPERANDO....\n");
 	while (i >= 0 && processes_queue[i].remaining_time > processes_queue[j].remaining_time && processes_queue[i].remaining_time > 0){
 		temp = processes_queue[i];
 		processes_queue[i] = processes_queue[j];
@@ -138,14 +157,16 @@ void insert_queue(process p, int n){
 		i--;
 		j--;
 	}
-	pthread_mutex_unlock(&mutex);
+	printf("SAI\n");
+	sem_post(&mutex);
+	return NULL;
 }
 
 void * run_thread_SRTN(void * thread_id){
 	long id = (long) thread_id;
 	clock_t start, tick;
 
-	pthread_mutex_lock(&mutex);
+	sem_wait(&mutex);
 
 	double cronometer_a = 1 / (- DBL_MIN), cronometer_b;	//	Cronometros para cronometrar o tempo total que o programa esta rodando.
 	start = tick = clock();								//	Começa de - DBL_MIN devido a chegada do processo poder ser 0
@@ -162,20 +183,24 @@ void * run_thread_SRTN(void * thread_id){
 		printf("%s rodou um tempo total de %lf segundos.\n", processes[id].name, cronometer_a);
 	else
 		printf("%s parou no deadline de %lf segundos.\n", processes[id].name, processes[id].deadline);
-	pthread_mutex_unlock(&mutex);
+	sem_post(&mutex);
 	return NULL;
 }
 
 void * SRTN (){
 	int i = 0;
 	double start_time;
+	pthread_t thread_queue;
 	qsort(processes, total_processes, sizeof(process), compare_processes_qsort);	//	qsort de acordo com a ordem de chegada. Talvez pros
+	assert (0 == pthread_create(&thread_queue, NULL, sort_queue, (void *) (long) queue_size));
+	printf("Thread criada.\n");
 	while(i < total_processes){														//	outros tenha que fazer outra função de comparação
 		start_time = (difftime(clock(), initial_time) / CLOCKS_PER_SEC);
 		if ((start_time - processes[i].arrival_time) > (1 / CLOCKS_PER_SEC)){		//	Espera até que um processo esteja disponível. Faz isso	
-			insert_queue(processes[i], i);
+			processes_queue[i] = processes[i];
 			assert (0 == pthread_create(&threads[i], NULL, run_thread_SRTN, (void *) (long) i));
-			i++;																	//	ate que todos os processos estejam em threads
+			i++;
+			queue_size++;																	//	ate que todos os processos estejam em threads
 		}
 	}
 	return NULL;
@@ -184,7 +209,7 @@ void * SRTN (){
 int main(int argc, char** argv){
 	int i;
 	initial_time = clock();
-	pthread_mutex_init(&mutex, NULL);
+	sem_init(&mutex, 0, 1);
 	read_file(argv);
 	SRTN();
 	for (i = 0; i < total_processes; i++)
@@ -192,7 +217,7 @@ int main(int argc, char** argv){
 	for (i = 0; i < total_processes; i++)
 		printf("ID: %d 	PROCESSO:	%ld 	remaining_time: %lf\n", i, processes_queue[i].id, processes_queue[i].remaining_time);
 	pthread_exit(NULL);
-	pthread_mutex_destroy(&mutex);
+	sem_destroy(&mutex);
 	return 0;
 
 }
@@ -210,3 +235,4 @@ int main(int argc, char** argv){
 						printf("GLOBAL TIME: %lf\n", global_time);
 
 */
+
