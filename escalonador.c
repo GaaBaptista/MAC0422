@@ -33,18 +33,14 @@ typedef struct process process;
 	Quando terminar a gente olha	*/ 
 
 int total_processes = 0, context_change = 0;
-long queue_size = 0;
-int queue_flags [MAX];
 
 process processes [MAX];
 
 pthread_t threads[MAX];
-pthread_mutex_t mutex, sem_queue;
+pthread_mutex_t mutex;
 
 double global_cronometer = 0;
-struct timespec start;
-struct timespec end;
-struct timespec initial_time;
+struct timespec start, end, initial_time;
 
 
 int sched_getcpu(); //	Frescura do compilador
@@ -65,10 +61,6 @@ static double TimeSpecToSeconds(struct timespec* ts)
 {
     return (double)ts->tv_sec + (double)ts->tv_nsec / 1000000000.0;
 }
-
-/*double global_clock(){
-	return ((clock() - initial_time) / CLOCKS_PER_SEC);
-}*/
 
 /*	Recebe o arquivo com os valores de t0, name, dt e deadline, e cria um vetor
 	processes[MAX] com os processos lidos. Os ids dos processos correspondem a ordem
@@ -161,7 +153,6 @@ void  sort_queue (int n){
 			processes[i].run_flag = 1;
 			break;
 		}
-
 	pthread_mutex_unlock(&mutex);
 }
 
@@ -172,9 +163,8 @@ void * run_thread_SRTN(void * thread_id){
 	while (processes[id].remaining_time > 0.0){	//	Tempo do processo / deadline
 		pthread_mutex_lock(&mutex);
 		clock_gettime(CLOCK_MONOTONIC, &curr_time);
-		if (processes[id].run_flag == 1){
+		if (processes[id].run_flag == 1)
 			processes[id].remaining_time -= (TimeSpecToSeconds(&curr_time) - TimeSpecToSeconds(&st_time));
-		}
 		st_time = curr_time;
 		pthread_mutex_unlock(&mutex);
 	}
@@ -206,17 +196,16 @@ void * SRTN (){
 			processes[j].run_flag = 1;
 			pthread_join(threads[j], NULL);
 			processes[i].run_flag = 0;
-		}
-		
-		return NULL;
-	}
+		}		
+	return NULL;
+}
 
 int main(int argc, char** argv){
 	int i;
 	clock_gettime(CLOCK_MONOTONIC, &initial_time);
 	pthread_mutex_init(&mutex, NULL);
 	read_file(argv);
-	FCFS();
+	SRTN();
 	for (i = 0; i < total_processes; i++)
 		pthread_join(threads[i], NULL);
 	printf("C_E: %d\n", context_change);
@@ -224,18 +213,4 @@ int main(int argc, char** argv){
 	return 0;
 
 }
-
-/* 	PRINTS:
-	for (i = 0; i < total_processes; i++)
-		printf("ID: %d 	PROCESSO:	%ld 	remaining_time: %lf\n", i, processes[i].id, processes[i].remaining_time);
-	for (i = 0; i < total_processes; i++)
-		printf("ID: %d 	PROCESSO:	%ld 	remaining_time: %lf\n", i, processes[i].id, processes[i].remaining_time);
-	for (int j = 0; j < i; j++)
-		printf("ID: %d 	PROCESSO:	%ld 	remaining_time: %lf\n", j, processes_queue[j].id, processes_queue[j].remaining_time);
-	printf("%s sendo inserido na fila\n", processes[i].name);
-		printf("%s terminou de rodar...\n", processes[id].name);
-					printf("HOLDING THREAD %ld...\n", id);
-						printf("GLOBAL TIME: %lf\n", global_time);
-
-*/
 
