@@ -7,10 +7,10 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <assert.h>
-#include <time.h>
 #include <sched.h>
 #include <float.h>
 #include <semaphore.h>
+#include <time.h>
 
 #define MAX 255
 #define MAX_STRING_LENGTH 255
@@ -38,12 +38,13 @@ int queue_flags [MAX];
 
 process processes [MAX];
 
-clock_t initial_time;
-
 pthread_t threads[MAX];
 pthread_mutex_t mutex, sem_queue;
 
 double global_cronometer = 0;
+struct timespec start;
+struct timespec end;
+struct timespec initial_time;
 
 
 int sched_getcpu(); //	Frescura do compilador
@@ -58,6 +59,11 @@ void list_processes(){
 	int i;
 	for (i = 0; i < total_processes; i++)
 		printf("|ID: %ld | |t0: %lf | |name: %s | |dt: %lf | |dl:%lf |\n", processes[i].id, processes[i].arrival_time, processes[i].name, processes[i].execution_time, processes[i].deadline);
+}
+
+static double TimeSpecToSeconds(struct timespec* ts)
+{
+    return (double)ts->tv_sec + (double)ts->tv_nsec / 1000000000.0;
 }
 
 /*double global_clock(){
@@ -165,18 +171,19 @@ void * run_thread_SRTN(void * thread_id){
 	long id = (long) thread_id;
 	clock_t tick;
 	double tick_time, processed_time = 0;
+	struct timespec st_time, curr_time;
+	clock_gettime(CLOCK_MONOTONIC, &st_time);
 	//printf("THREAD %s STARTED\n", processes[id].name);
 	while (processes[id].remaining_time > 0.0){	//	Tempo do processo / deadline
 		pthread_mutex_lock(&mutex);
+		clock_gettime(CLOCK_MONOTONIC, &curr_time);
 		if (processes[id].run_flag == 1){
-			tick = clock();
-			tick_time = ((clock() - tick) / (double)(CLOCKS_PER_SEC)) ;
-			processes[id].remaining_time -= tick_time;
-			processed_time += tick_time;
-			global_cronometer += tick_time;
+			processes[id].remaining_time -= (TimeSpecToSeconds(&curr_time) - TimeSpecToSeconds(&st_time));
 		}
+		st_time = curr_time;
 		pthread_mutex_unlock(&mutex);
 	}
+
 	
 	//processes[id].run_flag = 0;
 	//processes[id].active = 0;	
@@ -192,12 +199,9 @@ void * SRTN (){
 	double tick_time, local_time = DBL_MIN;
 	qsort(processes, total_processes, sizeof(process), compare_processes_qsort);	//	qsort de acordo com a ordem de chegada. Talvez pros
 	while(i < total_processes){														//	outros tenha que fazer outra função de comparação
-		tick = clock();
-		tick_time = ((clock() - tick) / (double)(CLOCKS_PER_SEC));
-		local_time += tick_time;
-		global_cronometer += tick_time;
-		for ( ; ((local_time) > processes[i].arrival_time) && i < total_processes; ){		//	Espera até que um processo esteja disponível. Faz isso	
-			
+		clock_gettime(CLOCK_MONOTONIC, &end);
+		tick_time = (TimeSpecToSeconds(&end) - TimeSpecToSeconds(&initial_time));
+		for ( ; tick_time > processes[i].arrival_time && i < total_processes; ){		//	Espera até que um processo esteja disponível. Faz isso	
 			printf("THREAD %s CREATED\n", processes[i].name);
 			assert (0 == pthread_create(&threads[i], NULL, run_thread_SRTN, (void *) (long) i));
 			sort_queue(i);
@@ -211,7 +215,7 @@ void * SRTN (){
 
 int main(int argc, char** argv){
 	int i;
-	initial_time = clock();	
+	clock_gettime(CLOCK_MONOTONIC, &initial_time);
 	pthread_mutex_init(&mutex, NULL);
 	read_file(argv);
 	SRTN();
