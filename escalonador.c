@@ -32,7 +32,7 @@ typedef struct process process;
 /* 	Variaveis globais. Não sei se todas necessariamente precisam ser globais.
 	Quando terminar a gente olha	*/ 
 
-int total_processes = 0, processes_remaining;
+int total_processes = 0, context_change = 0;
 long queue_size = 0;
 int queue_flags [MAX];
 
@@ -153,19 +153,14 @@ void  sort_queue (int n){
 		processes[current] = temp;
 		previous--;
 		current--;
+		if (!current) context_change++;
 	}
 	for (int i = 0; i <= n; i++)
 		if (processes[i].remaining_time > 0){
-			printf("SOLTEI THREAD %s\n", processes[i].name);
 			processes[i].run_flag = 1;
 			break;
 		}
 
-	printf("QUEUE SITUATION:\n");
-	for (int i = 0; i <= n; i++){
-		printf("|%s 	%lf		%d|\n", processes[i].name, processes[i].remaining_time, processes[i].run_flag);
-		printf("\n");
-	}
 	pthread_mutex_unlock(&mutex);
 }
 
@@ -175,7 +170,6 @@ void * run_thread_SRTN(void * thread_id){
 	double tick_time, processed_time = 0;
 	struct timespec st_time, curr_time;
 	clock_gettime(CLOCK_MONOTONIC, &st_time);
-	printf("THREAD %s RUNNING\n", processes[id].name);
 	while (processes[id].remaining_time > 0.0){	//	Tempo do processo / deadline
 		pthread_mutex_lock(&mutex);
 		clock_gettime(CLOCK_MONOTONIC, &curr_time);
@@ -186,10 +180,6 @@ void * run_thread_SRTN(void * thread_id){
 		pthread_mutex_unlock(&mutex);
 	}
 	printf("THREAD %s ENDED\n", processes[id].name);
-	printf("%lf\n", processes[id].remaining_time);
-	
-	//processes[id].run_flag = 0;
-	//processes[id].active = 0;	
 	/*printf("Current CPU: %d\n", sched_getcpu());*/	// Deixa isso aqui. Tem que ter no relatorio, e não posso esquecer desse comando
 	
 	return NULL;
@@ -207,7 +197,6 @@ void * SRTN (){
 			printf("THREAD %s CREATED\n", processes[i].name);
 			sort_queue(i);
 			pthread_create(&threads[i], NULL, run_thread_SRTN, (void *) (long) i);
-			//processes[i].active = 1;
 			i++;
 		}
 	}
@@ -232,7 +221,7 @@ int main(int argc, char** argv){
 	SRTN();
 	for (i = 0; i < total_processes; i++)
 		pthread_join(threads[i], NULL);
-	printf("GLOBAL_CRONOMETER: %lf\n", global_cronometer);
+	printf("C_E: %d\n", context_change);
 	pthread_exit(NULL);
 	return 0;
 
