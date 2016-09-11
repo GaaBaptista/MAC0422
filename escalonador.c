@@ -23,7 +23,7 @@ struct process {
 	long id;
 	double arrival_time, execution_time, deadline, quantum, remaining_time;
 	char* name;
-	int run_flag;
+	int run_flag, active;
 };
 typedef struct process process;
 
@@ -37,7 +37,6 @@ long queue_size = 0;
 int queue_flags [MAX];
 
 process processes [MAX];
-process processes_queue[MAX];
 
 clock_t initial_time;
 
@@ -93,6 +92,7 @@ void read_file(char ** argv){
 		processes[total_processes].quantum = 1;
 		processes[total_processes].remaining_time = processes[total_processes].execution_time;
 		processes[total_processes].run_flag = 0;
+		processes[total_processes].active = 0;
 		total_processes++;
 	}
 	fclose(fp);
@@ -137,19 +137,27 @@ void read_file(char ** argv){
 }*/
 
 void  sort_queue (int n){
-	long i = (long) n - 1;
-	long j = (long) n;
+	int current = n, previous = n - 1;
 	process temp;
 	pthread_mutex_lock(&mutex);
-	printf("ESPERANDO....\n");
-	while (i >= 0 && processes_queue[i].remaining_time > processes_queue[j].remaining_time && processes_queue[i].remaining_time > 0){
-		temp = processes_queue[i];
-		processes_queue[i] = processes_queue[j];
-		processes_queue[j] = temp;
-		i--;
-		j--;
+	while (n && previous >= 0 && processes[previous].remaining_time > processes[current].remaining_time){
+		processes[current].run_flag = 0;
+		temp = processes[previous];
+		processes[previous] = processes[current];
+		processes[current] = temp;
+		previous--;
+		current--;
 	}
-	printf("SAI\n");
+	for (int i = 0; i <= n; i++)
+		if (processes[i].remaining_time > 0){
+			processes[i].run_flag = 1;
+			break;
+		}
+	printf("QUEUE SITUATION:\n");
+	for (int i = 0; i <= n; i++){
+		printf("|%s 	%lf		%d|\n", processes[i].name, processes[i].remaining_time, processes[i].run_flag);
+		printf("\n");
+	}
 	pthread_mutex_unlock(&mutex);
 }
 
@@ -157,42 +165,47 @@ void * run_thread_SRTN(void * thread_id){
 	long id = (long) thread_id;
 	clock_t tick;
 	double tick_time, processed_time = 0;
-	printf("%s comecou a rodar...\n", processes[id].name);
-	pthread_mutex_lock(&mutex);
+	//printf("THREAD %s STARTED\n", processes[id].name);
 	while (processes[id].remaining_time > 0.0){	//	Tempo do processo / deadline
-		if (processes[id].run_flag){
+		pthread_mutex_lock(&mutex);
+		if (processes[id].run_flag == 1){
 			tick = clock();
 			tick_time = ((clock() - tick) / (double)(CLOCKS_PER_SEC)) ;
-			processes_queue[id].remaining_time -= tick_time;
 			processes[id].remaining_time -= tick_time;
 			processed_time += tick_time;
 			global_cronometer += tick_time;
 		}
+		pthread_mutex_unlock(&mutex);
 	}
-	processes[id].run_flag = 0;
+	
+	//processes[id].run_flag = 0;
+	//processes[id].active = 0;	
 	/*printf("Current CPU: %d\n", sched_getcpu());*/	// Deixa isso aqui. Tem que ter no relatorio, e não posso esquecer desse comando
-	printf("%s parou de rodar depois de %lf segundos.\n", processes[id].name, processed_time);
-	pthread_mutex_unlock(&mutex);
+	printf("THREAD %s ENDED.\n", processes[id].name);
+	
 	return NULL;
 }
 
 void * SRTN (){
 	int i = 0;
 	clock_t tick;
-	double cronometer = DBL_MIN, tick_time;
-	pthread_t thread_queue;
+	double tick_time, local_time = DBL_MIN;
 	qsort(processes, total_processes, sizeof(process), compare_processes_qsort);	//	qsort de acordo com a ordem de chegada. Talvez pros
 	while(i < total_processes){														//	outros tenha que fazer outra função de comparação
 		tick = clock();
 		tick_time = ((clock() - tick) / (double)(CLOCKS_PER_SEC));
+		local_time += tick_time;
 		global_cronometer += tick_time;
-		for ( ; (global_cronometer > processes[i].arrival_time) && i < total_processes; ){		//	Espera até que um processo esteja disponível. Faz isso	
-			processes_queue[i] = processes[i];
+		for ( ; ((local_time) > processes[i].arrival_time) && i < total_processes; ){		//	Espera até que um processo esteja disponível. Faz isso	
+			
+			printf("THREAD %s CREATED\n", processes[i].name);
 			assert (0 == pthread_create(&threads[i], NULL, run_thread_SRTN, (void *) (long) i));
+			sort_queue(i);
+			//processes[i].active = 1;
 			i++;
-			queue_size++;																	//	ate que todos os processos estejam em threads
 		}
 	}
+
 	return NULL;
 }
 
@@ -202,11 +215,8 @@ int main(int argc, char** argv){
 	pthread_mutex_init(&mutex, NULL);
 	read_file(argv);
 	SRTN();
-
 	for (i = 0; i < total_processes; i++)
-		assert(0 == pthread_join(threads[i], NULL));	//	Comando pra esperar as threads finalizarem
-	for (i = 0; i < total_processes; i++)
-		printf("ID: %d 	PROCESSO:	%ld 	remaining_time: %lf\n", i, processes_queue[i].id, processes_queue[i].remaining_time);
+		pthread_join(threads[i], NULL);
 	printf("GLOBAL_CRONOMETER: %lf\n", global_cronometer);
 	pthread_exit(NULL);
 	return 0;
