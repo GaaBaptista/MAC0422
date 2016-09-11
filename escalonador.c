@@ -23,7 +23,7 @@ struct process {
 	long id;
 	double arrival_time, execution_time, deadline, quantum, remaining_time;
 	char* name;
-	int run_flag, active;
+	int run_flag;
 };
 typedef struct process process;
 
@@ -32,7 +32,7 @@ typedef struct process process;
 /* 	Variaveis globais. Não sei se todas necessariamente precisam ser globais.
 	Quando terminar a gente olha	*/ 
 
-int total_processes = 0;
+int total_processes = 0, processes_remaining;
 long queue_size = 0;
 int queue_flags [MAX];
 
@@ -98,7 +98,6 @@ void read_file(char ** argv){
 		processes[total_processes].quantum = 1;
 		processes[total_processes].remaining_time = processes[total_processes].execution_time;
 		processes[total_processes].run_flag = 0;
-		processes[total_processes].active = 0;
 		total_processes++;
 	}
 	fclose(fp);
@@ -146,8 +145,9 @@ void  sort_queue (int n){
 	int current = n, previous = n - 1;
 	process temp;
 	pthread_mutex_lock(&mutex);
+	for (int i = 0; i <= n; i++)
+		processes[i].run_flag = 0;
 	while (n && previous >= 0 && processes[previous].remaining_time > processes[current].remaining_time){
-		processes[current].run_flag = 0;
 		temp = processes[previous];
 		processes[previous] = processes[current];
 		processes[current] = temp;
@@ -156,9 +156,11 @@ void  sort_queue (int n){
 	}
 	for (int i = 0; i <= n; i++)
 		if (processes[i].remaining_time > 0){
+			printf("SOLTEI THREAD %s\n", processes[i].name);
 			processes[i].run_flag = 1;
 			break;
 		}
+
 	printf("QUEUE SITUATION:\n");
 	for (int i = 0; i <= n; i++){
 		printf("|%s 	%lf		%d|\n", processes[i].name, processes[i].remaining_time, processes[i].run_flag);
@@ -173,7 +175,7 @@ void * run_thread_SRTN(void * thread_id){
 	double tick_time, processed_time = 0;
 	struct timespec st_time, curr_time;
 	clock_gettime(CLOCK_MONOTONIC, &st_time);
-	//printf("THREAD %s STARTED\n", processes[id].name);
+	printf("THREAD %s RUNNING\n", processes[id].name);
 	while (processes[id].remaining_time > 0.0){	//	Tempo do processo / deadline
 		pthread_mutex_lock(&mutex);
 		clock_gettime(CLOCK_MONOTONIC, &curr_time);
@@ -183,12 +185,12 @@ void * run_thread_SRTN(void * thread_id){
 		st_time = curr_time;
 		pthread_mutex_unlock(&mutex);
 	}
-
+	printf("THREAD %s ENDED\n", processes[id].name);
+	printf("%lf\n", processes[id].remaining_time);
 	
 	//processes[id].run_flag = 0;
 	//processes[id].active = 0;	
 	/*printf("Current CPU: %d\n", sched_getcpu());*/	// Deixa isso aqui. Tem que ter no relatorio, e não posso esquecer desse comando
-	printf("THREAD %s ENDED.\n", processes[id].name);
 	
 	return NULL;
 }
@@ -203,15 +205,24 @@ void * SRTN (){
 		tick_time = (TimeSpecToSeconds(&end) - TimeSpecToSeconds(&initial_time));
 		for ( ; tick_time > processes[i].arrival_time && i < total_processes; ){		//	Espera até que um processo esteja disponível. Faz isso	
 			printf("THREAD %s CREATED\n", processes[i].name);
-			assert (0 == pthread_create(&threads[i], NULL, run_thread_SRTN, (void *) (long) i));
 			sort_queue(i);
+			pthread_create(&threads[i], NULL, run_thread_SRTN, (void *) (long) i);
 			//processes[i].active = 1;
 			i++;
 		}
 	}
-
-	return NULL;
-}
+	for (int j = 0; j < total_processes; j++)
+		processes[j].run_flag = 0;
+	for (int j = 0; j < total_processes; j++)
+		if (processes[j].remaining_time < 0);
+		else{
+			processes[j].run_flag = 1;
+			pthread_join(threads[j], NULL);
+			processes[i].run_flag = 0;
+		}
+		
+		return NULL;
+	}
 
 int main(int argc, char** argv){
 	int i;
