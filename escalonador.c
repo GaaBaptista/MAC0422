@@ -106,40 +106,41 @@ void read_file(char ** argv){
 /* 	Função que executa o que realmente deve ser feito no EP (O que terá que ser feito nas threads).
 	Depois muda o nome e pah */
 
-/*void *run_thread_FCFS(void * thread_id){
+void *run_thread_FCFS(void * thread_id){
 	long id = (long) thread_id;
-	clock_t tick;
-
+	struct timespec st_time, curr_time;
+	clock_gettime(CLOCK_MONOTONIC, &st_time);
 	pthread_mutex_lock(&mutex);
-	double cronometer_a = DBL_MIN, tick_time;	//	Cronometros para cronometrar o tempo total que o programa esta rodando.
-	while ((cronometer_a < processes[id].execution_time) && (global_clock() < processes[id].deadline)){	//	Tempo do processo / deadline
-		tick = clock();
-		tick_time = (double)(clock() - tick) / ((double)(CLOCKS_PER_SEC)) ;
-		cronometer_a += tick_time;
-		processes_queue[id].remaining_time -= tick_time;
-	}*/
-	/*printf("Current CPU: %d\n", sched_getcpu());*/	// Deixa isso aqui. Tem que ter no relatorio, e não posso esquecer desse comando
-	/*if ((global_clock()) < processes[id].deadline)
-		printf("%s rodou um tempo total de %lf segundos.\n", processes[id].name, cronometer_a);
-	else
-		printf("%s parou no deadline de %lf segundos.\n", processes[id].name, processes[id].deadline);
+	while (processes[id].remaining_time > 0.0){	//	Tempo do processo / deadline
+		clock_gettime(CLOCK_MONOTONIC, &curr_time);
+		if (processes[id].run_flag == 1){
+			processes[id].remaining_time -= (TimeSpecToSeconds(&curr_time) - TimeSpecToSeconds(&st_time));
+		}
+		st_time = curr_time;
+	}
 	pthread_mutex_unlock(&mutex);
+	printf("THREAD %s ENDED\n", processes[id].name);
+	/*printf("Current CPU: %d\n", sched_getcpu());*/	// Deixa isso aqui. Tem que ter no relatorio, e não posso esquecer desse comando
 	return NULL;
-}*/
+}
 
-/*void * FCFS (){
+void * FCFS (){
 	int i = 0;
-	double start_time;
+	double tick_time;
 	qsort(processes, total_processes, sizeof(process), compare_processes_qsort);	//	qsort de acordo com a ordem de chegada. Talvez pros
 	while(i < total_processes){														//	outros tenha que fazer outra função de comparação
-		start_time = (difftime(clock(), initial_time) / CLOCKS_PER_SEC);
-		if ((start_time - processes[i].arrival_time) > (1 / CLOCKS_PER_SEC)){		//	Espera até que um processo esteja disponível. Faz isso
-			assert (0 == pthread_create(&threads[i], NULL, run_thread_FCFS, (void *) (long) i));
-			i++;																	//	ate que todos os processos estejam em threads
+		clock_gettime(CLOCK_MONOTONIC, &end);
+		tick_time = (TimeSpecToSeconds(&end) - TimeSpecToSeconds(&initial_time));
+		for ( ; tick_time > processes[i].arrival_time && i < total_processes; ){		//	Espera até que um processo esteja disponível. Faz isso	
+			printf("THREAD %s CREATED\n", processes[i].name);
+			processes[i].run_flag = 1;
+			pthread_create(&threads[i], NULL, run_thread_FCFS, (void *) (long) i);
+			pthread_join(threads[i], NULL);
+			i++;
 		}
 	}
 	return NULL;
-}*/
+}
 
 void  sort_queue (int n){
 	int current = n, previous = n - 1;
@@ -166,8 +167,6 @@ void  sort_queue (int n){
 
 void * run_thread_SRTN(void * thread_id){
 	long id = (long) thread_id;
-	clock_t tick;
-	double tick_time, processed_time = 0;
 	struct timespec st_time, curr_time;
 	clock_gettime(CLOCK_MONOTONIC, &st_time);
 	while (processes[id].remaining_time > 0.0){	//	Tempo do processo / deadline
@@ -187,8 +186,7 @@ void * run_thread_SRTN(void * thread_id){
 
 void * SRTN (){
 	int i = 0;
-	clock_t tick;
-	double tick_time, local_time = DBL_MIN;
+	double tick_time;
 	qsort(processes, total_processes, sizeof(process), compare_processes_qsort);	//	qsort de acordo com a ordem de chegada. Talvez pros
 	while(i < total_processes){														//	outros tenha que fazer outra função de comparação
 		clock_gettime(CLOCK_MONOTONIC, &end);
@@ -218,7 +216,7 @@ int main(int argc, char** argv){
 	clock_gettime(CLOCK_MONOTONIC, &initial_time);
 	pthread_mutex_init(&mutex, NULL);
 	read_file(argv);
-	SRTN();
+	FCFS();
 	for (i = 0; i < total_processes; i++)
 		pthread_join(threads[i], NULL);
 	printf("C_E: %d\n", context_change);
