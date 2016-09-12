@@ -1,0 +1,7 @@
+Para compilar, apenas digitar make
+
+Execução:
+	
+	ep1sh: ./ep1sh
+	escalonador: 	./ep1esc (escalonador) (trace) (arquivo de saida) (d)
+					Por exemplo, ./ep1esc 1 trace.txt log.txt d
