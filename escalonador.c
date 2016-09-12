@@ -12,7 +12,7 @@
 #include <semaphore.h>
 #include <time.h>
 
-#define MAX 255
+#define MAX 10000
 #define MAX_STRING_LENGTH 255
 
 /* 	Struct de um processo: ID pra controle no vetor de processos/ids/threads
@@ -29,11 +29,13 @@ typedef struct process process;
 
 
 
+
+
 /* 	Variaveis globais. Não sei se todas necessariamente precisam ser globais.
 	Quando terminar a gente olha	*/ 
 
-int total_processes = 0, context_change = 0;
-
+int total_processes = 0, wf = 1, line = 1;
+long context_change = 0;
 process processes [MAX];
 
 pthread_t threads[MAX];
@@ -41,7 +43,7 @@ pthread_mutex_t mutex;
 
 double global_cronometer = 0;
 struct timespec start, end, initial_time;
-
+FILE *file;
 
 int sched_getcpu(); //	Frescura do compilador
 
@@ -69,7 +71,7 @@ static double TimeSpecToSeconds(struct timespec* ts)
 void read_file(char ** argv){
 	FILE *fp;
 	char name[255];
-	fp = fopen(argv[1], "r");
+	fp = fopen(argv[2], "r");
 	if (fp == NULL) {
       printf ("\nArquivo %s não encontrado.\n", argv[1]);
       exit (EXIT_FAILURE);
@@ -102,6 +104,9 @@ void *run_thread_FCFS(void * thread_id){
 	long id = (long) thread_id;
 	struct timespec st_time, curr_time;
 	clock_gettime(CLOCK_MONOTONIC, &st_time);
+	int CPU;
+	CPU = sched_getcpu();
+	if (wf) fprintf(stderr, "Processo %s usa a CPU %d\n", processes[id].name, CPU);
 	pthread_mutex_lock(&mutex);
 	while (processes[id].remaining_time > 0.0){	//	Tempo do processo / deadline
 		clock_gettime(CLOCK_MONOTONIC, &curr_time);
@@ -111,7 +116,13 @@ void *run_thread_FCFS(void * thread_id){
 		st_time = curr_time;
 	}
 	pthread_mutex_unlock(&mutex);
-	printf("THREAD %s ENDED\n", processes[id].name);
+	clock_gettime(CLOCK_MONOTONIC, &curr_time);
+	double tf = (TimeSpecToSeconds(&curr_time) - TimeSpecToSeconds(&initial_time));
+	fprintf(file, "%s %lf %lf\n",processes[id].name, tf, tf - processes[id].arrival_time);
+	if (wf) {
+		fprintf(stderr, "Processo %s liberou a CPU %d\n", processes[id].name, CPU);
+		fprintf(stderr, "Linha da saída: %d\n", line++);
+	}
 	/*printf("Current CPU: %d\n", sched_getcpu());*/	// Deixa isso aqui. Tem que ter no relatorio, e não posso esquecer desse comando
 	return NULL;
 }
@@ -124,7 +135,8 @@ void * FCFS (){
 		clock_gettime(CLOCK_MONOTONIC, &end);
 		tick_time = (TimeSpecToSeconds(&end) - TimeSpecToSeconds(&initial_time));
 		for ( ; tick_time > processes[i].arrival_time && i < total_processes; ){		//	Espera até que um processo esteja disponível. Faz isso	
-			printf("THREAD %s CREATED\n", processes[i].name);
+			if (wf)
+				fprintf(stderr, "Processo %s chegou no sistema. Linha %d\n", processes[i].name, i);
 			processes[i].run_flag = 1;
 			pthread_create(&threads[i], NULL, run_thread_FCFS, (void *) (long) i);
 			pthread_join(threads[i], NULL);
@@ -146,8 +158,8 @@ void  sort_queue (int n){
 		processes[current] = temp;
 		previous--;
 		current--;
-		if (!current) context_change++;
 	}
+	if (current == 0) context_change++;
 	for (int i = 0; i <= n; i++)
 		if (processes[i].remaining_time > 0){
 			processes[i].run_flag = 1;
@@ -160,6 +172,8 @@ void * run_thread_SRTN(void * thread_id){
 	long id = (long) thread_id;
 	struct timespec st_time, curr_time;
 	clock_gettime(CLOCK_MONOTONIC, &st_time);
+	int CPU;
+	CPU = sched_getcpu();
 	while (processes[id].remaining_time > 0.0){	//	Tempo do processo / deadline
 		pthread_mutex_lock(&mutex);
 		clock_gettime(CLOCK_MONOTONIC, &curr_time);
@@ -168,7 +182,13 @@ void * run_thread_SRTN(void * thread_id){
 		st_time = curr_time;
 		pthread_mutex_unlock(&mutex);
 	}
-	printf("THREAD %s ENDED\n", processes[id].name);
+	clock_gettime(CLOCK_MONOTONIC, &curr_time);
+	double tf = (TimeSpecToSeconds(&curr_time) - TimeSpecToSeconds(&initial_time));
+	fprintf(file, "%s %lf %lf\n",processes[id].name, tf, tf - processes[id].arrival_time);
+	if (wf) {
+		fprintf(stderr, "Processo %s liberou a CPU %d\n", processes[id].name, CPU);
+		fprintf(stderr, "Linha da saída: %d\n", line++);
+	}
 	/*printf("Current CPU: %d\n", sched_getcpu());*/	// Deixa isso aqui. Tem que ter no relatorio, e não posso esquecer desse comando
 	
 	return NULL;
@@ -182,7 +202,8 @@ void * SRTN (){
 		clock_gettime(CLOCK_MONOTONIC, &end);
 		tick_time = (TimeSpecToSeconds(&end) - TimeSpecToSeconds(&initial_time));
 		for ( ; tick_time > processes[i].arrival_time && i < total_processes; ){		//	Espera até que um processo esteja disponível. Faz isso	
-			printf("THREAD %s CREATED\n", processes[i].name);
+			if (wf)
+				fprintf(stderr, "Processo %s chegou no sistema. Linha %d\n", processes[i].name, i);
 			sort_queue(i);
 			pthread_create(&threads[i], NULL, run_thread_SRTN, (void *) (long) i);
 			i++;
@@ -201,15 +222,23 @@ void * SRTN (){
 }
 
 int main(int argc, char** argv){
-	int i;
+	int scheduler;
+	file = fopen(argv[3], "w");
+	if (argc == 5)
+		wf = 1;
+	else
+		wf = 0;
+	scheduler = atoi(argv[1]);
 	clock_gettime(CLOCK_MONOTONIC, &initial_time);
 	pthread_mutex_init(&mutex, NULL);
 	read_file(argv);
-	SRTN();
-	for (i = 0; i < total_processes; i++)
-		pthread_join(threads[i], NULL);
-	printf("C_E: %d\n", context_change);
-	pthread_exit(NULL);
+	if (scheduler == 1)
+		FCFS();
+	else if (scheduler == 2)
+		SRTN();
+	else
+		printf("Não fizemos =(\n");
+	if (wf) fprintf(stderr, "Mudanças de contexto: %ld\n", context_change);
 	return 0;
 
 }
