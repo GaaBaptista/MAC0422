@@ -250,6 +250,7 @@ int main(int argc, char** argv){
 	else
 		printf("Não fizemos =(\n");
 	if (wf) fprintf(stderr, "Mudanças de contexto: %ld\n", context_change);
+	fprintf(file, "%ld\n",context_change);
 	return 0;
 
 }
