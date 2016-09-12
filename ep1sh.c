@@ -1,4 +1,4 @@
-/*	Gabriel Baptista		8941300(?)
+/*	Gabriel Baptista		8941300
 	Hélio Assakura			8941064 */
 
 
@@ -23,7 +23,7 @@ char * command;
 /* Mostra o prompt, com o diretorio local */
 
 void print_prompt(){
-	char * current_directory = (char *) malloc (size_directory); 
+	char * current_directory = (char *) malloc (size_directory);
 	if (getcwd (current_directory, size_directory) == current_directory)
 		printf ("(%s): ", current_directory);
 }
@@ -46,9 +46,9 @@ void read_command (){
 }
 
 /* 	Execução dos binarios (ls, date e ./ <args>), retornando o pid do
-	filho (não necessário, tem que tirar depois) */
-				
-int binary_commands(){
+	filho  */
+
+void binary_commands(){
 	pid_t child_pid;
 	if ((child_pid = fork()) > 0){
 		waitpid(-1, NULL, 0);
@@ -59,41 +59,49 @@ int binary_commands(){
 		printf("\n ERRO");
       	exit(1);
   	}
-	return child_pid;
 }
 
-/* Execução do chmod por system call, ta separado do id. Tem que juntar depois */
+/* Execução do chmod e do id por system call*/
 
-void sys_commands_chmod(){
+void sys_commands(){
 	const char * path;
 	mode_t number;
-	struct stat fileStat;
 	path = arguments[2];
 	number = strtol(arguments[1], NULL, 8);
-	if (chmod(path, number) == 0)
-		printf("Permissão alterada");
-	else
-		printf("fracasso");
-}
-
-/* Execução do id -u */
-
-void sys_commands_id(){
 	if (strcmp(arguments[1], "-u") == 0)
-		printf( "%d" , getuid());
-	else
-		exit(1);
+		printf( "%d\n" , getuid());
+	else{
+        if (chmod(path, number) == 0)
+            printf("Permissão alterada\n");
+        else
+            printf("Fracasso\n");
+    }
 }
 
 int main(int argc, char *argv[]){
-	int i;
 	while (1){
 		print_prompt();
 		read_command();
-		/*i = binary_commands();
-		printf ("pid_id: %d\n", i);
-		sys_commands_chmod();*/
-		sys_commands_id();
-	}
+		if((strcmp(arguments[0],"/bin/ls") == 0) || (strcmp(arguments[0], "/bin/date") == 0) ||
+                (strcmp(arguments[0], "./ep1") == 0)){
+                binary_commands();
+                //limpando arguments para a próxima chamada
+                arguments[0] = NULL;
+                arguments[1] = NULL;
+                arguments[2] = NULL;
+        }
+        else{
+            if ((strcmp(arguments[0],"chmod") == 0) || (strcmp(arguments[0], "id") == 0)){
+                sys_commands();
+                arguments[0] = NULL;
+                arguments[1] = NULL;
+                arguments[2] = NULL;
+            }
+            else{
+                if((strcmp(arguments[0],"exit") == 0)) exit(EXIT_SUCCESS);
+                else printf("Tentando sair? Digite 'exit'\n");
+            }
+        }
+    }
 	return 0;
 }

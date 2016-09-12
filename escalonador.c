@@ -1,5 +1,5 @@
-/*	Ainda tem que reorganizar a bagaça toda. Tem umas variaveis com nome nada a ver
-	que depois eu arrumo. Vai pensando nas paradas todas aí e pah	*/
+/*	Gabriel Baptista		8941300
+	Hélio Assakura			8941064 */
 
 #include <stdio.h>
 #include <string.h>
