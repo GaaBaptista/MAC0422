@@ -1,1 +1,36 @@
 
+void print_track(){
+for (int i = 0; i < track_size; i++)
+    if (track[i][0] == -1) printf("|_|");
+	else printf("|%ld|", track[i][0]);
+printf("\n");
+}
+
+int track_side;
+cyclists[thread_id].pos += 1;
+
+/* Avança o ciclista pra uma das pistas vagas */
+if (track[cyclists[thread_id].pos % track_size][0] == -1)
+    track[cyclists[thread_id].pos % track_size][0] = thread_id;
+else
+    track[cyclists[thread_id].pos % track_size][1] = thread_id;
+
+/* Apaga a ultima posicao dele, dependendo de que pista ele veio */
+if (track_side == 0)
+    track[(cyclists[thread_id].pos - 1) % track_size][0] = -1;
+else
+    track[(cyclists[thread_id].pos - 1) % track_size][1] = -1;
+}
+
+________________
+
+srand(time(NULL));
+
+void check_engine(long thread_id){
+    /* Sorteia uniformemente um numero de 0 a 9. Se saiu 0 (10% de chance), quebra a bicicleta */
+    if (!(rand() % 10)){
+        printf("Quebrou na volta %ld.\n", cyclists[thread_id].completed_laps);
+        pthread_exit(NULL);
+    }
+}
+        
