@@ -74,21 +74,27 @@ long start_position(long id){
 	return (cyclists[id].pos + i);
 }
 
+void print_track(){
+	for (int j = 0; j < 2; j++){
+		for (int i = 0; i < track_size; i++)
+			if (track[i][j] == -1) printf("|_|");
+			else printf("|%ld|", track[i][j]);
+		printf("\n");
+	}
+}
+
 /* funcao das threads. Primeiramente, posiciona os ciclistas nas suas posicoes iniciais. Depois, vai simulando
 	a corrida. Ainda falta fazer a segunda parte */
 
 void * run_const(void * argument){
 	long thread_id, start;
 	thread_id = (long) argument;
-
+	int track_side = 0;
 	/* Coloca os ciclistas em suas posicoes iniciais */
 	pthread_mutex_lock(&mutex);
 	start = start_position(thread_id);
 	cyclists[thread_id].pos = start;
-	for (int i = 0; i < track_size; i++)
-		if (track[i][0] == -1) printf("|_|");
-		else printf("|%ld|", track[i][0]);
-	printf("\n");
+	print_track();
 	pthread_mutex_unlock(&mutex);
 	pthread_barrier_wait(&barrier);
 
@@ -100,22 +106,32 @@ void * run_const(void * argument){
 			da posicao de cada um. Ainda precisamos arrumar isso, colocar a condicao de quebra, e o modo
 			debug. Falta coisa pra coroi */
 
-		pthread_mutex_lock(&mutex);
-		track[cyclists[thread_id].pos % track_size][0] = 0;
+		pthread_mutex_lock(&mutex);	
+
+		/* Apaga a ultima posicao dele, dependendo de que pista ele veio */
+		if (track_side == 0)
+		    track[(cyclists[thread_id].pos) % track_size][0] = -1;
+		else
+		    track[(cyclists[thread_id].pos) % track_size][1] = -1;
+		/* Avança o ciclista pra uma das pistas vagas */
 		cyclists[thread_id].pos += 1;
-		track[cyclists[thread_id].pos % track_size][0] = thread_id;
-		for (int i = 0; i < track_size; i++)
-			if (track[i][0] == -1) printf("|_|");
-			else printf("|%ld|", track[i][0]);
-		printf("\n");
-		printf("Thread %ld na barreira\n", thread_id);
+		if (track[cyclists[thread_id].pos % track_size][0] == -1){
+		    track[cyclists[thread_id].pos % track_size][0] = thread_id;
+			track_side = 0;
+		}
+		else{
+		    track[cyclists[thread_id].pos % track_size][1] = thread_id;
+			track_side = 1;
+		}
+		print_track();
 		pthread_mutex_unlock(&mutex);
 		pthread_barrier_wait(&barrier);
 
 		/* Todos andaram e tem suas posicoes. Printamos pra saber como esta a fila */
 
 		print_cyclist(thread_id);
-		nsleep(6000000);
+
+		nsleep(600000);
 
 		/*	verificamos se foi completada uma volta */
 		if ((cyclists[thread_id].pos % track_size) == cyclists[thread_id].start_pos)
@@ -131,8 +147,9 @@ int main(int argc, char** argv){
 	pthread_mutex_init(&mutex, NULL);
 	if (strcmp(argv[2], "u"))printf("OPCAO UNIFORME\n");
 	/* inicializacao da pista */
-	for (id = 0; id < track_size; id++)
-		track[id][0] = -1;
+	for (int j = 0; j < 2; j++)
+		for (int i = 0; i < track_size; i++)
+			track[i][j] = -1;
 	/* Criacao das threads, e join delas */
 	for (id = 0; id < (2 * team_size); id++){
 		create_cyclists(id);
