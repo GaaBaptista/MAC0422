@@ -10,9 +10,12 @@
 #include <sched.h>
 #include <float.h>
 #include <time.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 
 #define team_size 4
-#define track_size 30
+#define track_size 10
+#define total_laps 16
 
 struct cyclist{	
     pthread_t thread_cyclist;
@@ -21,17 +24,26 @@ struct cyclist{
     	cyclist_ID,
 		team_ID,
 		completed_laps,
-		start_pos;
+		start_pos,
+		curr_pos;
 };
 typedef struct cyclist cyclist;
 
-/* variáveis globais */
+struct team{
+	long team_cyclists[team_size];
+	long remaining,
+		leader;
+};
+typedef struct team team;
 
+/* variáveis globais */
+pthread_t dummies[2 * team_size];
 cyclist cyclists [2 * team_size];
-pthread_barrier_t barrier;
+pthread_barrier_t barrier, barrier_msg;
 long track [track_size][2];
-long leader_0, leader_1;
-pthread_mutex_t mutex;
+team team_0, team_1;
+pthread_mutex_t mutex, pmutex;
+int quebrados = 0, done = 0;
 
 /* Contagem de tempo (nao necessario) */
 void nsleep(long us)
@@ -52,18 +64,20 @@ void create_cyclists(long id){
 	if (id < team_size){
 		cyclists[id].team_ID = 0;
 		cyclists[id].pos = 0;
+		team_0.remaining++;
 		
 	}
 	else{
 		cyclists[id].team_ID = 1;
 		cyclists[id].pos = track_size / 2;
+		team_1.remaining++;
 	}
 }
 
 /* Funcao usada para identificar a situacao das threads/ciclistas */
 void print_cyclist(long id){
-	printf( "pos: %ld | cyclist_ID: %ld | team_ID: %ld | completed_laps: %ld\n", cyclists[id].pos,
-		cyclists[id].cyclist_ID, cyclists[id].team_ID, cyclists[id].completed_laps);
+	printf( "pos: %ld | cyclist_ID: %ld | team_ID: %ld | completed_laps: %ld | curr_pos:%ld\n", cyclists[id].pos,
+		cyclists[id].cyclist_ID, cyclists[id].team_ID, cyclists[id].completed_laps, cyclists[id].curr_pos);
 }
 
 /* Estabelece a posicao inicial de cada ciclista, enfileirando-os */
@@ -72,11 +86,16 @@ long start_position(long id){
 	while (track[cyclists[id].pos + i][0] != -1) i++;
 	track[cyclists[id].pos + i][0] = id;
 	cyclists[id].start_pos = cyclists[id].pos + i;
+	cyclists[id].curr_pos = team_size - i;
+	if (cyclists[id].team_ID == 0)
+		team_0.team_cyclists[team_size - i - 1] = id;
+	else
+		team_1.team_cyclists[team_size - i - 1] = id;
 	if (i == 1){
 		if (cyclists[id].team_ID == 0)
-			leader_0 = id;
+			team_0.leader = id;
 		else 
-			leader_1 = id;
+			team_1.leader = id;
 	}
 	return (cyclists[id].pos + i);
 }
@@ -88,13 +107,130 @@ void print_track(){
 			else printf("|%ld|", track[i][j]);
 		printf("\n");
 	}
+	printf("\n");
 }
+
+int check_engine(){
+	return (rand() % 10);
+}
+
+void print_saida(long id){
+	if (cyclists[id].team_ID == 0){
+		printf("Volta nro %ld:\n", cyclists[team_0.team_cyclists[2]].completed_laps);
+		for (int i = 0; i < 3; i++){
+			printf("%d: Ciclista: %ld\n", 
+				i + 1, team_0.team_cyclists[i]);
+		}
+	}
+	else{
+		printf("Volta nro %ld:\n", cyclists[team_1.team_cyclists[2]].completed_laps);
+		for (int i = 0; i < 3; i++){
+			printf("%d: Ciclista: %ld\n", 
+				i + 1, team_1.team_cyclists[i]);
+		}
+	}
+	printf("O terceiro ciclista demorou %d ms pra executar essa volta\n", 60 * track_size);
+}
+
 
 /* funcao das threads. Primeiramente, posiciona os ciclistas nas suas posicoes iniciais. Depois, vai simulando
 	a corrida. Ainda falta fazer a segunda parte */
 
-void * run_const(void * argument){
+void * dummy (){
 	int s;
+	while(1){
+		s = pthread_barrier_wait(&barrier);
+		/*if (s == PTHREAD_BARRIER_SERIAL_THREAD){
+			print_track();
+		}*/
+		pthread_barrier_wait(&barrier_msg);
+	}
+	return NULL;
+}
+
+void change_leader(long thread_id, long team){
+	int i = 0, j;
+	long temp;
+	if (team == 0){
+		while (team_0.team_cyclists[i] != thread_id) i++;
+		j = i + 1;
+		while (j < team_size){
+			temp = team_0.team_cyclists[i];
+			team_0.team_cyclists[i] = team_0.team_cyclists[j];
+			team_0.team_cyclists[j] = temp;
+			j++;i++;
+		}
+		team_0.leader = team_0.team_cyclists[2];
+	}
+	else{
+		while (team_1.team_cyclists[i] != thread_id) i++;
+		j = i + 1;
+		while (j < team_size){
+			temp = team_1.team_cyclists[i];
+			team_1.team_cyclists[i] = team_1.team_cyclists[j];
+			team_1.team_cyclists[j] = temp;
+			j++;i++;
+		}
+		team_1.leader = team_1.team_cyclists[2];
+		}
+	}
+	/*if (team == 0){
+		if (cyclists[team_0.leader].cyclist_ID == thread_id){
+			while (i < 3){
+				if (team_0.team_cyclists[j] != -1){
+					i++; j++;
+				}
+				else j++;
+			}
+			team_0.leader = team_0.team_cyclists[j];
+		}	
+	}
+	else{
+		if (cyclists[team_1.leader].cyclist_ID == thread_id){
+			while (i < 3){
+				if (team_1.team_cyclists[j] != -1){
+					i++; j++;
+				}
+				else j++;
+			}
+			team_1.leader = team_1.team_cyclists[j];
+		}
+		
+	}*/
+
+int break_bycicle(long thread_id, int track_side){
+	if (cyclists[thread_id].team_ID == 0 && team_0.remaining > 3){
+		team_0.remaining--;
+		if (track_side == 0)
+			track[(cyclists[thread_id].pos) % track_size][0] = -1;
+		else
+			track[(cyclists[thread_id].pos) % track_size][1] = -1;
+		printf("Thread %ld quebrou na volta %ld\n", thread_id, cyclists[thread_id].completed_laps);
+		change_leader(thread_id, 0);
+		sleep(5);
+		/*pthread_cancel(cyclists[thread_id].thread_cyclist);*/
+		/*pthread_create(&dummies[thread_id], NULL, dummy, NULL);*/
+		return 1;
+		
+	}
+	else if (cyclists[thread_id].team_ID == 1 && team_1.remaining > 3){
+		team_1.remaining--;
+		if (track_side == 0)
+			track[(cyclists[thread_id].pos) % track_size][0] = -1;
+		else
+			track[(cyclists[thread_id].pos) % track_size][1] = -1;
+		printf("Thread %ld quebrou na volta %ld\n", thread_id, cyclists[thread_id].completed_laps);
+		change_leader(thread_id, 1);
+		sleep(5);
+		/*pthread_cancel(cyclists[thread_id].thread_cyclist);*/
+		/*pthread_create(&dummies[thread_id], NULL, dummy, NULL);*/
+		return 1;
+	}
+	return 0;
+}
+
+void * run_const(void * argument){
+	int s = 0, broke = 0;
 	long thread_id, start;
 	thread_id = (long) argument;
 	int track_side = 0;
@@ -103,15 +239,15 @@ void * run_const(void * argument){
 	start = start_position(thread_id);
 	cyclists[thread_id].pos = start;
 	print_track();
+	/*print_cyclist(thread_id);*/
 	pthread_mutex_unlock(&mutex);
 	pthread_barrier_wait(&barrier);
 
 	/* Todos os ciclistas estao a postos, prontos para comecar a corrida */
-	while (cyclists[leader_0].completed_laps < 4 || cyclists[leader_1].completed_laps < 4){
+	while ((cyclists[team_0.leader].completed_laps < total_laps || cyclists[team_1.leader].completed_laps < total_laps) && !broke){
 		/* Atualizacao da posicao do ciclista depois de 60ms. Usamos mod para facilitar a atualizacao
 			da posicao de cada um. Ainda precisamos arrumar isso, colocar a condicao de quebra, e o modo
 			debug. Falta coisa pra coroi */
-		s = pthread_barrier_wait(&barrier);
 		pthread_mutex_lock(&mutex);
 
 		/* Apaga a ultima posicao dele, dependendo de que pista ele veio */
@@ -123,35 +259,49 @@ void * run_const(void * argument){
 		
 		cyclists[thread_id].pos += 1;
 		if (track[cyclists[thread_id].pos % track_size][0] == -1){
-		    track[cyclists[thread_id].pos % track_size][0] = thread_id;
+		    track[cyclists[thread_id].pos % track_size][0] = cyclists[thread_id].cyclist_ID;
 			track_side = 0;
 		}
 		else{
-		    track[cyclists[thread_id].pos % track_size][1] = thread_id;
+		    track[cyclists[thread_id].pos % track_size][1] = cyclists[thread_id].cyclist_ID;
 			track_side = 1;
 		}
 
 		/*	verificamos se foi completada uma volta */
 
-		if ((cyclists[thread_id].pos % track_size) == cyclists[thread_id].start_pos)
+		if ((cyclists[thread_id].pos % track_size) == cyclists[thread_id].start_pos){
 			cyclists[thread_id].completed_laps += 1;
-
+			/*if (cyclists[thread_id].curr_pos == 3){
+				print_saida(thread_id);
+			}*/
+			if (cyclists[thread_id].completed_laps % 4 == 0 && cyclists[thread_id].completed_laps != total_laps)
+				if (!check_engine()){
+					broke = break_bycicle(thread_id, track_side);
+				} 
+		}
 		pthread_mutex_unlock(&mutex);
-		/* Todos andaram e tem suas posicoes. Printamos pra saber como esta a fila */
-		
-		nsleep(200000);
-		if (s == PTHREAD_BARRIER_SERIAL_THREAD)
+
+		s = pthread_barrier_wait(&barrier);
+
+		if (s == PTHREAD_BARRIER_SERIAL_THREAD){
 			print_track();
-		
-		
+		}
+
+		pthread_barrier_wait(&barrier_msg);
+		/* Todos andaram e tem suas posicoes. Printamos pra saber como esta a fila */	
 	}
+	pthread_create(&dummies[thread_id], NULL, dummy, (void *) (long) thread_id);
 	return NULL;
 }
 
 int main(int argc, char** argv){
 	int id;
+	team_0.remaining = 0;
+	team_1.remaining = 0;
 	pthread_barrier_init(&barrier, NULL, team_size * 2);
+	pthread_barrier_init(&barrier_msg, NULL, team_size * 2);
 	pthread_mutex_init(&mutex, NULL);
+	srand(time(NULL));
 	if (strcmp(argv[2], "u"))printf("OPCAO UNIFORME\n");
 	/* inicializacao da pista */
 	for (int j = 0; j < 2; j++)
@@ -165,7 +315,20 @@ int main(int argc, char** argv){
 	for (id = 0; id < (2 * team_size); id++){
 		pthread_join(cyclists[id].thread_cyclist, NULL);
 	}
-	printf("FINAL: \n"); print_track();
+	sleep(1);
+	/*printf("FINAL: \n"); print_track();*/
 	return 0;
+	
+	
+	
+	
 }
 
+/*printf("TIME0:\n");
+	for (int i = 0; i < team_size; i++){
+		printf("team_0.team_cyclists[%d]: %ld\n", i, team_0.team_cyclists[i]);
+	}
+	printf("TIME1:\n");
+	for (int i = 0; i < team_size; i++){
+		printf("team_1.team_cyclists[%d]: %ld\n", i, team_1.team_cyclists[i]);
+	}*/
