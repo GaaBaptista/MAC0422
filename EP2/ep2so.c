@@ -140,9 +140,6 @@ void * dummy (){
 	int s;
 	while(1){
 		s = pthread_barrier_wait(&barrier);
-		/*if (s == PTHREAD_BARRIER_SERIAL_THREAD){
-			print_track();
-		}*/
 		pthread_barrier_wait(&barrier_msg);
 	}
 	return NULL;
@@ -174,42 +171,17 @@ void change_leader(long thread_id, long team){
 		team_1.leader = team_1.team_cyclists[2];
 		}
 	}
-	/*if (team == 0){
-		if (cyclists[team_0.leader].cyclist_ID == thread_id){
-			while (i < 3){
-				if (team_0.team_cyclists[j] != -1){
-					i++; j++;
-				}
-				else j++;
-			}
-			team_0.leader = team_0.team_cyclists[j];
-		}	
-	}
-	else{
-		if (cyclists[team_1.leader].cyclist_ID == thread_id){
-			while (i < 3){
-				if (team_1.team_cyclists[j] != -1){
-					i++; j++;
-				}
-				else j++;
-			}
-			team_1.leader = team_1.team_cyclists[j];
-		}
-		
-	}*/
 
 int break_bycicle(long thread_id, int track_side){
+	int i = 0;
 	if (cyclists[thread_id].team_ID == 0 && team_0.remaining > 3){
 		team_0.remaining--;
 		if (track_side == 0)
 			track[(cyclists[thread_id].pos) % track_size][0] = -1;
 		else
 			track[(cyclists[thread_id].pos) % track_size][1] = -1;
-		printf("Thread %ld quebrou na volta %ld\n", thread_id, cyclists[thread_id].completed_laps);
+		printf("Thread %ld quebrou na volta %ld na marca de %ld metros.\n", thread_id, cyclists[thread_id].completed_laps, cyclists[thread_id].pos % track_size);
 		change_leader(thread_id, 0);
-		sleep(5);
-		/*pthread_cancel(cyclists[thread_id].thread_cyclist);*/
-		/*pthread_create(&dummies[thread_id], NULL, dummy, NULL);*/
 		return 1;
 		
 	}
@@ -219,11 +191,9 @@ int break_bycicle(long thread_id, int track_side){
 			track[(cyclists[thread_id].pos) % track_size][0] = -1;
 		else
 			track[(cyclists[thread_id].pos) % track_size][1] = -1;
-		printf("Thread %ld quebrou na volta %ld\n", thread_id, cyclists[thread_id].completed_laps);
+		while (team_1.team_cyclists[i] != thread_id) i++;
+				printf("Thread %ld quebrou na volta %ld na marca de %ld metros.\n", thread_id, cyclists[thread_id].completed_laps, cyclists[thread_id].pos % track_size);
 		change_leader(thread_id, 1);
-		sleep(5);
-		/*pthread_cancel(cyclists[thread_id].thread_cyclist);*/
-		/*pthread_create(&dummies[thread_id], NULL, dummy, NULL);*/
 		return 1;
 	}
 	return 0;
@@ -316,7 +286,6 @@ int main(int argc, char** argv){
 		pthread_join(cyclists[id].thread_cyclist, NULL);
 	}
 	sleep(1);
-	/*printf("FINAL: \n"); print_track();*/
 	return 0;
 	
 	
